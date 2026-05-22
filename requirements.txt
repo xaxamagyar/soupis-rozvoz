@@ -1,0 +1,8 @@
+streamlit
+pandas
+geopy
+requests
+streamlit-sortables
+fpdf
+matplotlib
+openpyxl
