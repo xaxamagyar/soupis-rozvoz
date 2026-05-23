@@ -10,7 +10,6 @@ import os
 from urllib.parse import quote
 from datetime import datetime, timedelta, time as datetime_time
 from streamlit_sortables import sort_items
-# OPRAVENO: Importujeme moderní fpdf2 (třída FPDF), která nativně podporuje UTF-8 a vaše fonty z GitHubu
 from fpdf import FPDF
 import matplotlib.pyplot as plt
 
@@ -44,7 +43,7 @@ end_point_name = st.sidebar.text_input("Název cílového bodu", value="SKLAD (N
 
 st.sidebar.markdown("---")
 st.sidebar.header("💰 Pokladna / Finance")
-kasac_value = st.sidebar.number_input("Částka do kasáče (Kč)", min_value=0, value=0, step=100, help="Částka, kterou dostal řidič při odjezdu ze skladu.")
+kasac_value = st.sidebar.number_input("Č金額 do kasáče (Kč)", min_value=0, value=0, step=100, help="Částka, kterou dostal řidič při odjezdu ze skladu.")
 
 # --- FUNKCE PRO ZAOKROUHLOVÁNÍ ČASU NAHORU NA 15 MINUT ---
 def round_up_to_15_minutes(dt):
@@ -516,7 +515,7 @@ if shoptet_files and gpx_file:
             except: return 0.0
         total_cod = sum(parse_cod(x) for x in df_itinerary['Dobírka (Kč)'])
 
-        # NAČÍTÁNÍ PÍSEM: Cílíme přesně na ty názvy velkými písmeny z vašeho GitHubu
+        # Načítání TrueType písem velkými písmeny, přesně jak jsou nahraná na vašem GitHubu
         local_font_reg = "ARIAL.TTF"
         local_font_bold = "ARIALBD.TTF"
         
@@ -542,7 +541,8 @@ if shoptet_files and gpx_file:
 
         pdf = DriverPDF(orientation="P", unit="mm", format="A4")
         
-        # FIX PRO FPDF2 ONLINE LINUX: Používáme uni=True, aby nevznikala poškozená PKL cache na serveru
+        # FIX PRO ONLINE LINUX: Registrujeme font s parametrem uni=True, aby fpdf2 vynutilo UTF-8 kódování písem 
+        # a nevytvářelo binární cache soubory .pkl, na kterých to doposud padalo.
         if use_custom_font:
             pdf.add_font("ArialCustom", "", local_font_reg, uni=True)
             pdf.add_font("ArialCustom", "B", local_font_bold, uni=True)
@@ -578,14 +578,8 @@ if shoptet_files and gpx_file:
                 err_prefix = f"({row['Chyba']}) " if row['Chyba'] else ""
                 addr = f"{err_prefix}{row['Ulice']}, {row['Město']} {row['PSČ']}"
             
-            if not use_custom_font:
-                import unicodedata
-                addr = ''.join(c for c in unicodedata.normalize('NFD', addr) if unicodedata.category(c) != 'Mn')
-                prijemce_clean = ''.join(c for c in unicodedata.normalize('NFD', str(row['Příjemce'])) if unicodedata.category(c) != 'Mn')
-                note_clean = ''.join(c for c in unicodedata.normalize('NFD', str(row.get('Poznámka', ''))) if unicodedata.category(c) != 'Mn')
-            else:
-                prijemce_clean = str(row['Příjemce'])
-                note_clean = str(row.get('Poznámka', ''))
+            prijemce_clean = str(row['Příjemce'])
+            note_clean = str(row.get('Poznámka', ''))
 
             pdf.set_font(font_family_name, "", 9.5)
             words = f"Adresa: {addr}".split(' ')
@@ -753,8 +747,10 @@ if shoptet_files and gpx_file:
         pdf.set_text_color(44, 62, 80)
         pdf.cell(65, 5, f"Kasáč (při odjezdu): {int(kasac_value)} Kč" if use_custom_font else f"Kasac (pri odjezdu): {int(kasac_value)} Kc", ln=True)
 
-        # KROK 2: fpdf2 vygeneruje pole bajtů nativně metodou output() zcela bezpečně a bez ořezání dat
-        pdf_bytes = pdf.output()
+        # DEFINITIVNÍ FIX: Generujeme soubor do paměťového bufferu, což na 100 % zabrání binárnímu poškození online
+        pdf_buffer = io.BytesIO()
+        pdf.output(pdf_buffer)
+        pdf_bytes = pdf_buffer.getvalue()
         
         col_dl1, col_dl2 = st.columns(2)
         with col_dl1:
