@@ -516,7 +516,7 @@ if shoptet_files and gpx_file:
             except: return 0.0
         total_cod = sum(parse_cod(x) for x in df_itinerary['Dobírka (Kč)'])
 
-        # Načítání písem velkými písmeny přesně z vašeho GitHubu
+        # NAČÍTÁNÍ PÍSEM: Cílíme přesně na ty názvy velkými písmeny z vašeho GitHubu
         local_font_reg = "ARIAL.TTF"
         local_font_bold = "ARIALBD.TTF"
         
@@ -753,7 +753,7 @@ if shoptet_files and gpx_file:
         pdf.set_text_color(44, 62, 80)
         pdf.cell(65, 5, f"Kasáč (při odjezdu): {int(kasac_value)} Kč" if use_custom_font else f"Kasac (pri odjezdu): {int(kasac_value)} Kc", ln=True)
 
-        # KROK 2: fpdf2 generuje čisté bajty metodou output() nativně bez parametrů
+        # KROK 2: fpdf2 vygeneruje pole bajtů nativně metodou output() zcela bezpečně a bez ořezání dat
         pdf_bytes = pdf.output()
         
         col_dl1, col_dl2 = st.columns(2)
