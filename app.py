@@ -10,6 +10,7 @@ import os
 from urllib.parse import quote
 from datetime import datetime, timedelta, time as datetime_time
 from streamlit_sortables import sort_items
+# OPRAVENO: Importujeme moderní fpdf2 (třída FPDF), která umí UTF-8 a online Linux servery
 from fpdf import FPDF
 import matplotlib.pyplot as plt
 
@@ -202,7 +203,7 @@ if shoptet_files and gpx_file:
             del st.session_state['initial_processed_data']
 
     if 'initial_processed_data' not in st.session_state:
-        with st.spinner("Geokóduji adresy ze všech nahraných souborů a připravuji bloky..."):
+        with st.spinner("Geokóduji adresy ze všech nahraných souborů..."):
             df_initial, gpx_list, unmatched = process_initial_data(
                 shoptet_files, gpx_file.getvalue(), mapy_api_key
             )
@@ -269,7 +270,7 @@ if shoptet_files and gpx_file:
                             'Ulice': man_street,
                             'Město': man_city,
                             'PSČ': man_zip,
-                            'Chyba': "⚠️ NENALEZENO:" if is_err else "",
+                            'Chyba': "⚠️ NENALEZENO:",
                             'Telefon': man_phone,
                             'Dobírka (Kč)': man_cod,
                             'gpx_index': 99999,
@@ -439,7 +440,6 @@ if shoptet_files and gpx_file:
 
             margin = 0.6
             for city, (c_lat, c_lon) in major_cities.items():
-                # OPRAVENO: Bengálský text bezpečně odstraněn a přepsán na čisté max_lon
                 if (min_lat - margin) < c_lat < (max_lat + margin) and (min_lon - margin) < c_lon < (max_lon + margin):
                     ax.scatter(c_lon, c_lat, color='lightgray', s=40, marker='s', zorder=1)
                     ax.annotate(city, (c_lon, c_lat), textcoords="offset points", xytext=(0,6), ha='center', fontsize=8, color='gray', zorder=1)
@@ -472,7 +472,7 @@ if shoptet_files and gpx_file:
             except: return 0.0
         total_cod = sum(parse_cod(x) for x in df_itinerary['Dobírka (Kč)'])
 
-        # Fonty z kořenové složky (GitHubu)
+        # Fonty nahrané na vašem GitHubu
         local_font_reg = "ARIAL.TTF"
         local_font_bold = "ARIALBD.TTF"
         
@@ -709,7 +709,7 @@ if shoptet_files and gpx_file:
         pdf.set_text_color(44, 62, 80)
         pdf.cell(65, 5, f"Kasáč (při odjezdu): {int(kasac_value)} Kč" if use_custom_font else f"Kasac (pri odjezdu): {int(kasac_value)} Kc", ln=True)
 
-        # FPDF2 vygeneruje čisté pole bajtů metodou output() naprosto spolehlivě
+        # KROK 2: fpdf2 generuje čisté bajty metodou output() zcela bezpečně a nativně
         pdf_bytes = pdf.output()
         
         col_dl1, col_dl2 = st.columns(2)
