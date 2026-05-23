@@ -10,7 +10,7 @@ import os
 from urllib.parse import quote
 from datetime import datetime, timedelta, time as datetime_time
 from streamlit_sortables import sort_items
-# OPRAVENO: Používáme moderní fpdf2 (třída FPDF), která nativně podporuje UTF-8 a vaše fonty z GitHubu
+# OPRAVENO: Importujeme moderní fpdf2 (třída FPDF), která nativně podporuje UTF-8 a vaše fonty z GitHubu
 from fpdf import FPDF
 import matplotlib.pyplot as plt
 
@@ -194,7 +194,7 @@ def process_initial_data(shoptet_file_list, gpx_bytes, api_key):
             'Město': city,
             'PSČ': zip_code,
             'Chyba': item_marker,
-            'Telefon': str(row['phone']),
+            'Telefon': row['phone'],
             'Dobírka (Kč)': row['geisDeliveryPriceToPay'],
             'gpx_index': int(closest_gpx_idx),
             'lat': final_lat,
@@ -516,7 +516,7 @@ if shoptet_files and gpx_file:
             except: return 0.0
         total_cod = sum(parse_cod(x) for x in df_itinerary['Dobírka (Kč)'])
 
-        # Cílíme přesně na ty názvy velkými písmeny, které jsou nahrané na vašem GitHubu
+        # Načítání písem velkými písmeny přesně z vašeho GitHubu
         local_font_reg = "ARIAL.TTF"
         local_font_bold = "ARIALBD.TTF"
         
@@ -753,7 +753,7 @@ if shoptet_files and gpx_file:
         pdf.set_text_color(44, 62, 80)
         pdf.cell(65, 5, f"Kasáč (při odjezdu): {int(kasac_value)} Kč" if use_custom_font else f"Kasac (pri odjezdu): {int(kasac_value)} Kc", ln=True)
 
-        # FPDF2 vygeneruje pole bajtů nativně metodou output() zcela bezpečně a bez ořezání dat
+        # KROK 2: fpdf2 generuje čisté bajty metodou output() nativně bez parametrů
         pdf_bytes = pdf.output()
         
         col_dl1, col_dl2 = st.columns(2)
