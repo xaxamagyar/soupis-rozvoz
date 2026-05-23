@@ -439,7 +439,7 @@ if shoptet_files and gpx_file:
 
             margin = 0.6
             for city, (c_lat, c_lon) in major_cities.items():
-                if (min_lat - margin) < c_lat < (max_lat + margin) and (min_lon - margin) < c_lon < (max_lon + margin):
+                if (min_lat - margin) < c_lat < (max_lat + margin) and (min_lon - margin) < c_lon < (max_ যথોचित_lon + margin):
                     ax.scatter(c_lon, c_lat, color='lightgray', s=40, marker='s', zorder=1)
                     ax.annotate(city, (c_lon, c_lat), textcoords="offset points", xytext=(0,6), ha='center', fontsize=8, color='gray', zorder=1)
 
@@ -461,7 +461,7 @@ if shoptet_files and gpx_file:
             plt.close(fig)
             return img_buf
 
-        # --- GENERÁTOR PDF PŘES FPDF2 (Zafixována kompatibilita s Linuxem a UTF-8) ---
+        # --- GENERÁTOR PDF PŘES FPDF2 ---
         total_km = round(df_itinerary['Vzdálen k další (km)'].sum(), 1)
         pure_drive_min = int(df_itinerary['Čas k další (min)'].sum())
         total_hours = f"{pure_drive_min // 60}h {pure_drive_min % 60}min"
@@ -471,7 +471,7 @@ if shoptet_files and gpx_file:
             except: return 0.0
         total_cod = sum(parse_cod(x) for x in df_itinerary['Dobírka (Kč)'])
 
-        # Načítáme přímo fonty nahrané na vašem GitHubu
+        # PÁROVÁNÍ: Přesně na velké názvy TTF souborů, které máte na GitHubu
         local_font_reg = "ARIAL.TTF"
         local_font_bold = "ARIALBD.TTF"
         
@@ -497,7 +497,7 @@ if shoptet_files and gpx_file:
 
         pdf = DriverPDF(orientation="P", unit="mm", format="A4")
         
-        # FIX PRO FPDF2: Přidáváme font s parametrem uni=True pro čisté kódování UTF-8 v češtině bez PKL souborů
+        # FIX PRO FPDF2: Používáme parametr uni=True pro vynucení čistého kódování UTF-8 v češtině bez PKL cache souborů
         if use_custom_font:
             pdf.add_font("ArialCustom", "", local_font_reg, uni=True)
             pdf.add_font("ArialCustom", "B", local_font_bold, uni=True)
@@ -533,7 +533,6 @@ if shoptet_files and gpx_file:
                 err_prefix = f"({row['Chyba']}) " if row['Chyba'] else ""
                 addr = f"{err_prefix}{row['Ulice']}, {row['Město']} {row['PSČ']}"
             
-            # Pokud by fonty na GitHubu náhodou chyběly, očistíme diakritiku, aby kód nespadl
             if not use_custom_font:
                 import unicodedata
                 addr = ''.join(c for c in unicodedata.normalize('NFD', addr) if unicodedata.category(c) != 'Mn')
@@ -709,7 +708,7 @@ if shoptet_files and gpx_file:
         pdf.set_text_color(44, 62, 80)
         pdf.cell(65, 5, f"Kasáč (při odjezdu): {int(kasac_value)} Kč" if use_custom_font else f"Kasac (pri odjezdu): {int(kasac_value)} Kc", ln=True)
 
-        # FIX: Metoda output() ve verzi fpdf2 generuje čisté pole bajtů naprosto bezpečně bez parametrů
+        # KROK 2: fpdf2 generuje čisté bajty metodou output() zcela bezpečně a nativně
         pdf_bytes = pdf.output()
         
         col_dl1, col_dl2 = st.columns(2)
