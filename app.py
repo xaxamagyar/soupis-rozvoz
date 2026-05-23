@@ -10,13 +10,13 @@ import os
 from urllib.parse import quote
 from datetime import datetime, timedelta, time as datetime_time
 from streamlit_sortables import sort_items
-# OPRAVENO: Importujeme moderní fpdf2 (třída FPDF), která umí UTF-8 a online Linux servery
+# UPRAVENO: Používáme moderní fpdf2 (třída FPDF), která nativně podporuje UTF-8 a vaše fonty z GitHubu
 from fpdf import FPDF
 import matplotlib.pyplot as plt
 
 st.set_page_config(page_title="Plánovač tras pro řidiče", layout="wide")
-st.title("🚚 Inteligentní plánovač tras (Kompletní stabilizace online)")
-st.write("Chyťte a přesuňte řádky s objednávkou myší, upravte poznámky, smažte nepotřebné a vygenerujte přehledné PDF.")
+st.title("🚚 Inteligentní plánovač tras (Opravy adres + Záchrana městem)")
+st.write("Chyťte a přesuňte řádky s objednávkou myší, upravte poznámky, opravte nenalezené adresy a vygenerujte přehledné PDF.")
 
 # --- SIDEBAR: NASTAVENÍ ČASŮ A API ---
 st.sidebar.header("⚙️ Nastavení výpočtu")
@@ -94,6 +94,50 @@ def get_driving_data(lat1, lon1, lat2, lon2, api_key=""):
     return float(fallback_dist), float((fallback_dist / 50.0) * 60)
 
 
+def single_address_geocoding(street, city, zip_code, gpx_list, api_key):
+    geolocator = Nominatim(user_agent="shoptet_gpx_planner_fix")
+    address_str = f"{street}, {city} {zip_code}, Česká republika".replace(' ,', ',').strip(", ")
+    
+    lat, lon = None, None
+    is_error = False
+    
+    if api_key:
+        lat, lon = geocode_mapy_cz(address_str, api_key)
+    
+    if lat is None:
+        try:
+            location = geolocator.geocode(address_str, timeout=4)
+            if location: lat, lon = location.latitude, location.longitude
+        except: pass
+        
+    if lat is None and city:
+        backup_city_str = f"{city} {zip_code}, Česká republika".strip()
+        if api_key:
+            lat, lon = geocode_mapy_cz(backup_city_str, api_key)
+        if lat is None:
+            try:
+                location = geolocator.geocode(backup_city_str, timeout=4)
+                if location: lat, lon = location.latitude, location.longitude
+            except: pass
+            
+    closest_gpx_idx = 0
+    if lat is not None and lon is not None:
+        final_lat, final_lon = lat, lon
+        order_coord = (lat, lon)
+        min_dist = float('inf')
+        for gpx_idx, gpx_coord in enumerate(gpx_list):
+            dist = (order_coord[0] - gpx_coord[0])**2 + (order_coord[1] - gpx_coord[1])**2
+            if dist < min_dist:
+                min_dist = dist
+                closest_gpx_idx = gpx_idx
+    else:
+        final_lat, final_lon = gpx_list[0] if gpx_list else (0.0, 0.0)
+        closest_gpx_idx = 0
+        is_error = True
+        
+    return final_lat, final_lon, int(closest_gpx_idx), is_error
+
+
 @st.cache_data(show_spinner=False)
 def process_initial_data(shoptet_file_list, gpx_bytes, api_key):
     root = ET.fromstring(gpx_bytes)
@@ -127,7 +171,6 @@ def process_initial_data(shoptet_file_list, gpx_bytes, api_key):
         
     df_clean = df_combined.groupby('id').agg(agg_dict).reset_index()
 
-    geolocator = Nominatim(user_agent="shoptet_gpx_planner_fix")
     orders = []
     unmatched_count = 0
     
@@ -136,49 +179,22 @@ def process_initial_data(shoptet_file_list, gpx_bytes, api_key):
         city = str(row['deliveryCity']).replace('\n', ' ').replace('\r', '').replace('nan', '').strip()
         zip_code = str(row.get('deliveryZip', '')).replace('\n', ' ').replace('\r', '').replace('nan', '').replace(' ', '').strip()
         
-        address_str = f"{street}, {city} {zip_code}, Česká republika".replace(' ,', ',').strip(", ")
+        final_lat, final_lon, closest_gpx_idx, is_error = single_address_geocoding(street, city, zip_code, gpx_list, api_key)
         
-        lat, lon = None, None
-        
-        if api_key:
-            res_geo = geocode_mapy_cz(address_str, api_key)
-            if res_geo:
-                lat, lon = res_geo
-        
-        if lat is None:
-            try:
-                location = geolocator.geocode(address_str, timeout=5)
-                if location: lat, lon = location.latitude, location.longitude
-            except:
-                pass
-        
-        is_error = False
-        closest_gpx_idx = 0
-        if lat is not None and lon is not None:
-            final_lat, final_lon = lat, lon
-            order_coord = (lat, lon)
-            min_dist = float('inf')
-            for gpx_idx, gpx_coord in enumerate(gpx_list):
-                dist = (order_coord[0] - gpx_coord[0])**2 + (order_coord[1] - gpx_coord[1])**2
-                if dist < min_dist:
-                    min_dist = dist
-                    closest_gpx_idx = gpx_idx
-        else:
-            final_lat, final_lon = gpx_list[0]
-            closest_gpx_idx = 0
+        if is_error:
             unmatched_count += 1
-            is_error = True
-            
-        item_marker = "⚠️ NENALEZENO:" if is_error else ""
+            item_marker = "⚠️ NENALEZENO:"
+        else:
+            item_marker = ""
         
         orders.append({
             'Číslo objednávky': str(row['id']),
-            'Příjemce': row['deliveryFullName'],
+            'Příjemce': str(row['deliveryFullName']),
             'Ulice': street,
             'Město': city,
             'PSČ': zip_code,
             'Chyba': item_marker,
-            'Telefon': row['phone'],
+            'Telefon': str(row['phone']),
             'Dobírka (Kč)': row['geisDeliveryPriceToPay'],
             'gpx_index': int(closest_gpx_idx),
             'lat': final_lat,
@@ -187,7 +203,8 @@ def process_initial_data(shoptet_file_list, gpx_bytes, api_key):
         time.sleep(0.05)
         
     if len(orders) == 0:
-        return pd.DataFrame(columns=['Číslo objednávky', 'Příjemce', 'Ulice', 'Město', 'PSČ', 'Chyba', 'Telefon', 'Dobírka (Kč)', 'gpx_index', 'lat', 'lon']), gpx_list, 0
+        mock_df = pd.DataFrame(columns=['Číslo objednávky', 'Příjemce', 'Ulice', 'Město', 'PSČ', 'Chyba', 'Telefon', 'Dobírka (Kč)', 'gpx_index', 'lat', 'lon'])
+        return mock_df, gpx_list, 0
         
     df_sorted = pd.DataFrame(orders).sort_values(by='gpx_index').reset_index(drop=True)
     return df_sorted, gpx_list, unmatched_count
@@ -203,14 +220,14 @@ if shoptet_files and gpx_file:
             del st.session_state['initial_processed_data']
 
     if 'initial_processed_data' not in st.session_state:
-        with st.spinner("Geokóduji adresy ze všech nahraných souborů..."):
+        with st.spinner("Geokóduji adresy ze všech nahraných souborů a připravuji bloky..."):
             df_initial, gpx_list, unmatched = process_initial_data(
                 shoptet_files, gpx_file.getvalue(), mapy_api_key
             )
             st.session_state['initial_processed_data'] = df_initial
             st.session_state['gpx_list'] = gpx_list
             if unmatched > 0:
-                st.warning(f"⚠️ Pozor: {unmatched} adres se nepodařilo nalézt na mapě.")
+                st.warning(f"⚠️ Pozor: {unmatched} adres se nepodařilo nalézt na mapě ani podle názvu města.")
     else:
         df_initial = st.session_state['initial_processed_data']
         gpx_list = st.session_state['gpx_list']
@@ -248,21 +265,7 @@ if shoptet_files and gpx_file:
                     st.error("Pro přidání zastávky musíte vyplnit alespoň Ulici a Město.")
                 else:
                     with st.spinner("Hledám adresu na mapě..."):
-                        addr_str = f"{man_street}, {man_city} {man_zip}, Česká republika".replace(' ,', ',').strip(", ")
-                        lat, lon = None, None
-                        if mapy_api_key:
-                            res = geocode_mapy_cz(addr_str, mapy_api_key)
-                            if res: lat, lon = res
-                        if lat is None:
-                            try:
-                                loc = Nominatim(user_agent="shoptet_planner_manual").geocode(addr_str, timeout=3)
-                                if loc: lat, lon = loc.latitude, loc.longitude
-                            except: pass
-                        
-                        is_err = False
-                        if lat is None or lon is None:
-                            lat, lon = gpx_list[0] if gpx_list else (0.0, 0.0)
-                            is_err = True
+                        lat, lon, closest_gpx_idx, is_err = single_address_geocoding(man_street, man_city, man_zip, gpx_list, mapy_api_key)
                         
                         new_row = pd.DataFrame([{
                             'Číslo objednávky': man_id,
@@ -270,7 +273,7 @@ if shoptet_files and gpx_file:
                             'Ulice': man_street,
                             'Město': man_city,
                             'PSČ': man_zip,
-                            'Chyba': "⚠️ NENALEZENO:",
+                            'Chyba': "⚠️ NENALEZENO:" if is_err else "",
                             'Telefon': man_phone,
                             'Dobírka (Kč)': man_cod,
                             'gpx_index': 99999,
@@ -282,7 +285,7 @@ if shoptet_files and gpx_file:
                         st.cache_data.clear()
                         st.rerun()
 
-    tab_sort, tab_notes = st.tabs(["🗺️ Seřadit trasu (Myší)", "📝 Dopsat poznámky řidiči"])
+    tab_sort, tab_notes = st.tabs(["🗺️ Seřadit trasu (Myší)", "📝 Dopsat poznámky a upravit adresy"])
     
     with tab_sort:
         st.info("Chyťte řádek s objednávkou myší a přetáhněte ho nahoru nebo dolů pro změnu pořadí.")
@@ -298,14 +301,55 @@ if shoptet_files and gpx_file:
         sorted_strings = raw_sortables_output if raw_sortables_output is not None else items_list
 
     with tab_notes:
-        st.info("Zde můžete k seřazeným objednávkám dopsat vzkaz pro řidiče.")
+        st.info("Zde můžete k seřazeným objednávkám dopsat vzkaz, nebo ručně opravit chybné adresy (nápisy NENALEZENO).")
         order_notes = {}
+        updated_addresses = {}
+        
         for s in sorted_strings:
             order_data = mapping_dict[s]
             order_id = order_data['Číslo objednávky']
             prijemce = order_data['Příjemce']
+            is_bad = bool(order_data['Chyba'])
             
-            order_notes[order_id] = st.text_input(f"Poznámka k obj. {order_id} ({prijemce}):", key=f"note_{order_id}", placeholder="Zadejte pokyn řidiči...")
+            box_label = f"🔴 OBJEDNÁVKA {order_id} — {prijemce} (Chyba adresy!)" if is_bad else f"📦 Objednávka {order_id} — {prijemce}"
+            
+            with st.expander(box_label, expanded=is_bad):
+                col_note1, col_note2 = st.columns([2, 3])
+                with col_note1:
+                    order_notes[order_id] = st.text_input(f"Pokyn řidiči:", key=f"note_{order_id}", value="", placeholder="Zadejte pokyn...")
+                with col_note2:
+                    st.write("🌍 **Oprava adresy pro výpočet mapy:**")
+                    cx1, cx2, cx3 = st.columns([3, 2, 1])
+                    with cx1:
+                        new_st = st.text_input("Ulice", key=f"edit_st_{order_id}", value=order_data['Ulice'])
+                    with cx2:
+                        new_ct = st.text_input("Město", key=f"edit_ct_{order_id}", value=order_data['Město'])
+                    with cx3:
+                        new_zp = st.text_input("PSČ", key=f"edit_zp_{order_id}", value=order_data['PSČ'])
+                    
+                    updated_addresses[order_id] = {"Ulice": new_st, "Město": new_ct, "PSČ": new_zp, "old": order_data}
+
+        if st.button("💾 Uložit opravené adresy a přepočítat polohu", type="secondary"):
+            with st.spinner("Přepočítávám polohu opravených adres..."):
+                current_memory_df = st.session_state['initial_processed_data'].copy()
+                
+                for o_id, data in updated_addresses.items():
+                    if data["Ulice"] != data["old"]["Ulice"] or data["Město"] != data["old"]["Město"] or data["PSČ"] != data["old"]["PSČ"]:
+                        new_lat, new_lon, new_gpx, new_is_err = single_address_geocoding(data["Ulice"], data["Město"], data["PSČ"], gpx_list, mapy_api_key)
+                        
+                        idx_match = current_memory_df[current_memory_df['Číslo objednávky'] == str(o_id)].index
+                        if not idx_match.empty:
+                            current_memory_df.loc[idx_match, 'Ulice'] = data["Ulice"]
+                            current_memory_df.loc[idx_match, 'Město'] = data["Město"]
+                            current_memory_df.loc[idx_match, 'PSČ'] = data["PSČ"]
+                            current_memory_df.loc[idx_match, 'lat'] = new_lat
+                            current_memory_df.loc[idx_match, 'lon'] = new_lon
+                            current_memory_df.loc[idx_match, 'gpx_index'] = new_gpx
+                            current_memory_df.loc[idx_match, 'Chyba'] = "⚠️ NENALEZENO:" if new_is_err else ""
+                            
+                st.session_state['initial_processed_data'] = current_memory_df
+                st.cache_data.clear()
+                st.rerun()
 
     st.markdown("---")
     
@@ -472,7 +516,7 @@ if shoptet_files and gpx_file:
             except: return 0.0
         total_cod = sum(parse_cod(x) for x in df_itinerary['Dobírka (Kč)'])
 
-        # Fonty nahrané na vašem GitHubu
+        # NAČÍTÁNÍ PÍSEM: Cílíme přesně na ty názvy velkými písmeny, které jsou nahrané na vašem GitHubu
         local_font_reg = "ARIAL.TTF"
         local_font_bold = "ARIALBD.TTF"
         
@@ -498,7 +542,7 @@ if shoptet_files and gpx_file:
 
         pdf = DriverPDF(orientation="P", unit="mm", format="A4")
         
-        # FIX PRO FPDF2: Používáme parametr uni=True pro čisté kódování UTF-8 v češtině bez PKL cache souborů
+        # OPRAVA PRO FPDF2 ONLINE: Přidáváme parametr uni=True, aby nevznikaly poškozené konfigurační PKL cache soubory na Linuxu
         if use_custom_font:
             pdf.add_font("ArialCustom", "", local_font_reg, uni=True)
             pdf.add_font("ArialCustom", "B", local_font_bold, uni=True)
@@ -709,7 +753,7 @@ if shoptet_files and gpx_file:
         pdf.set_text_color(44, 62, 80)
         pdf.cell(65, 5, f"Kasáč (při odjezdu): {int(kasac_value)} Kč" if use_custom_font else f"Kasac (pri odjezdu): {int(kasac_value)} Kc", ln=True)
 
-        # KROK 2: fpdf2 generuje čisté bajty metodou output() zcela bezpečně a nativně
+        # KROK 2: fpdf2 generuje pole bajtů nativně metodou output() zcela bezpečně a bez ořezání dat
         pdf_bytes = pdf.output()
         
         col_dl1, col_dl2 = st.columns(2)
