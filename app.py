@@ -461,7 +461,7 @@ if shoptet_files and gpx_file:
             plt.close(fig)
             return img_buf
 
-        # --- GENERÁTOR PDF PŘES FPDF2 ---
+        # --- GENERÁTOR PDF PŘES FPDF2 (Zafixována kompatibilita s Linuxem a UTF-8) ---
         total_km = round(df_itinerary['Vzdálen k další (km)'].sum(), 1)
         pure_drive_min = int(df_itinerary['Čas k další (min)'].sum())
         total_hours = f"{pure_drive_min // 60}h {pure_drive_min % 60}min"
@@ -471,7 +471,7 @@ if shoptet_files and gpx_file:
             except: return 0.0
         total_cod = sum(parse_cod(x) for x in df_itinerary['Dobírka (Kč)'])
 
-        # OPRAVENO: Párujeme se přesně na velké názvy souborů písem z GitHubu
+        # Načítáme přímo fonty nahrané na vašem GitHubu
         local_font_reg = "ARIAL.TTF"
         local_font_bold = "ARIALBD.TTF"
         
@@ -497,9 +497,10 @@ if shoptet_files and gpx_file:
 
         pdf = DriverPDF(orientation="P", unit="mm", format="A4")
         
+        # FIX PRO FPDF2: Přidáváme font s parametrem uni=True pro čisté kódování UTF-8 v češtině bez PKL souborů
         if use_custom_font:
-            pdf.add_font("ArialCustom", "", local_font_reg)
-            pdf.add_font("ArialCustom", "B", local_font_bold)
+            pdf.add_font("ArialCustom", "", local_font_reg, uni=True)
+            pdf.add_font("ArialCustom", "B", local_font_bold, uni=True)
             
         pdf.add_page()
         
@@ -532,6 +533,7 @@ if shoptet_files and gpx_file:
                 err_prefix = f"({row['Chyba']}) " if row['Chyba'] else ""
                 addr = f"{err_prefix}{row['Ulice']}, {row['Město']} {row['PSČ']}"
             
+            # Pokud by fonty na GitHubu náhodou chyběly, očistíme diakritiku, aby kód nespadl
             if not use_custom_font:
                 import unicodedata
                 addr = ''.join(c for c in unicodedata.normalize('NFD', addr) if unicodedata.category(c) != 'Mn')
@@ -707,7 +709,7 @@ if shoptet_files and gpx_file:
         pdf.set_text_color(44, 62, 80)
         pdf.cell(65, 5, f"Kasáč (při odjezdu): {int(kasac_value)} Kč" if use_custom_font else f"Kasac (pri odjezdu): {int(kasac_value)} Kc", ln=True)
 
-        # OPRAVENO: Výstup z FPDF ukládáme bezpečně jako bajty metodou output() bez parametrů
+        # FIX: Metoda output() ve verzi fpdf2 generuje čisté pole bajtů naprosto bezpečně bez parametrů
         pdf_bytes = pdf.output()
         
         col_dl1, col_dl2 = st.columns(2)
