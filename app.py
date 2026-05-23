@@ -10,7 +10,7 @@ import os
 from urllib.parse import quote
 from datetime import datetime, timedelta, time as datetime_time
 from streamlit_sortables import sort_items
-# UPRAVENO: Používáme moderní fpdf2 (třída FPDF), která nativně podporuje UTF-8 a vaše fonty z GitHubu
+# OPRAVENO: Používáme moderní fpdf2 (třída FPDF), která nativně podporuje UTF-8 a vaše fonty z GitHubu
 from fpdf import FPDF
 import matplotlib.pyplot as plt
 
@@ -516,7 +516,7 @@ if shoptet_files and gpx_file:
             except: return 0.0
         total_cod = sum(parse_cod(x) for x in df_itinerary['Dobírka (Kč)'])
 
-        # NAČÍTÁNÍ PÍSEM: Cílíme přesně na ty názvy velkými písmeny, které jsou nahrané na vašem GitHubu
+        # Cílíme přesně na ty názvy velkými písmeny, které jsou nahrané na vašem GitHubu
         local_font_reg = "ARIAL.TTF"
         local_font_bold = "ARIALBD.TTF"
         
@@ -542,7 +542,7 @@ if shoptet_files and gpx_file:
 
         pdf = DriverPDF(orientation="P", unit="mm", format="A4")
         
-        # OPRAVA PRO FPDF2 ONLINE: Přidáváme parametr uni=True, aby nevznikaly poškozené konfigurační PKL cache soubory na Linuxu
+        # FIX PRO FPDF2 ONLINE LINUX: Používáme uni=True, aby nevznikala poškozená PKL cache na serveru
         if use_custom_font:
             pdf.add_font("ArialCustom", "", local_font_reg, uni=True)
             pdf.add_font("ArialCustom", "B", local_font_bold, uni=True)
@@ -753,7 +753,7 @@ if shoptet_files and gpx_file:
         pdf.set_text_color(44, 62, 80)
         pdf.cell(65, 5, f"Kasáč (při odjezdu): {int(kasac_value)} Kč" if use_custom_font else f"Kasac (pri odjezdu): {int(kasac_value)} Kc", ln=True)
 
-        # KROK 2: fpdf2 generuje pole bajtů nativně metodou output() zcela bezpečně a bez ořezání dat
+        # FPDF2 vygeneruje pole bajtů nativně metodou output() zcela bezpečně a bez ořezání dat
         pdf_bytes = pdf.output()
         
         col_dl1, col_dl2 = st.columns(2)
