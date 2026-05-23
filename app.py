@@ -439,7 +439,8 @@ if shoptet_files and gpx_file:
 
             margin = 0.6
             for city, (c_lat, c_lon) in major_cities.items():
-                if (min_lat - margin) < c_lat < (max_lat + margin) and (min_lon - margin) < c_lon < (max_ যথોचित_lon + margin):
+                # OPRAVENO: Bengálský text bezpečně odstraněn a přepsán na čisté max_lon
+                if (min_lat - margin) < c_lat < (max_lat + margin) and (min_lon - margin) < c_lon < (max_lon + margin):
                     ax.scatter(c_lon, c_lat, color='lightgray', s=40, marker='s', zorder=1)
                     ax.annotate(city, (c_lon, c_lat), textcoords="offset points", xytext=(0,6), ha='center', fontsize=8, color='gray', zorder=1)
 
@@ -471,7 +472,7 @@ if shoptet_files and gpx_file:
             except: return 0.0
         total_cod = sum(parse_cod(x) for x in df_itinerary['Dobírka (Kč)'])
 
-        # PÁROVÁNÍ: Přesně na velké názvy TTF souborů, které máte na GitHubu
+        # Fonty z kořenové složky (GitHubu)
         local_font_reg = "ARIAL.TTF"
         local_font_bold = "ARIALBD.TTF"
         
@@ -497,7 +498,7 @@ if shoptet_files and gpx_file:
 
         pdf = DriverPDF(orientation="P", unit="mm", format="A4")
         
-        # FIX PRO FPDF2: Používáme parametr uni=True pro vynucení čistého kódování UTF-8 v češtině bez PKL cache souborů
+        # FIX PRO FPDF2: Používáme parametr uni=True pro čisté kódování UTF-8 v češtině bez PKL cache souborů
         if use_custom_font:
             pdf.add_font("ArialCustom", "", local_font_reg, uni=True)
             pdf.add_font("ArialCustom", "B", local_font_bold, uni=True)
@@ -708,7 +709,7 @@ if shoptet_files and gpx_file:
         pdf.set_text_color(44, 62, 80)
         pdf.cell(65, 5, f"Kasáč (při odjezdu): {int(kasac_value)} Kč" if use_custom_font else f"Kasac (pri odjezdu): {int(kasac_value)} Kc", ln=True)
 
-        # KROK 2: fpdf2 generuje čisté bajty metodou output() zcela bezpečně a nativně
+        # FPDF2 vygeneruje čisté pole bajtů metodou output() naprosto spolehlivě
         pdf_bytes = pdf.output()
         
         col_dl1, col_dl2 = st.columns(2)
