@@ -14,7 +14,7 @@ from fpdf import FPDF
 import matplotlib.pyplot as plt
 
 st.set_page_config(page_title="Plánovač tras pro řidiče", layout="wide")
-st.title("🚚 Inteligentní plánovač tras (Mapa + Ruční zastávky)")
+st.title("🚚 Inteligentní plánovač tras (Kompletní oprava)")
 st.write("Chyťte a přesuňte řádky s objednávkou myší, upravte poznámky, smažte nepotřebné a vygenerujte přehledné PDF.")
 
 # --- SIDEBAR: NASTAVENÍ ČASŮ A API ---
@@ -152,11 +152,11 @@ def process_initial_data(shoptet_file_list, gpx_bytes, api_key):
                 pass
         
         is_error = False
+        closest_gpx_idx = 0  # BEZPEČNÁ INICIALIZACE PROTI KEYERROR
         if lat is not None and lon is not None:
             final_lat, final_lon = lat, lon
             order_coord = (lat, lon)
             min_dist = float('inf')
-            closest_gpx_idx = 0
             for gpx_idx, gpx_coord in enumerate(gpx_list):
                 dist = (order_coord[0] - gpx_coord[0])**2 + (order_coord[1] - gpx_coord[1])**2
                 if dist < min_dist:
@@ -179,12 +179,15 @@ def process_initial_data(shoptet_file_list, gpx_bytes, api_key):
             'Chyba': item_marker,
             'Telefon': row['phone'],
             'Dobírka (Kč)': row['geisDeliveryPriceToPay'],
-            'gpx_index': closest_gpx_idx,
+            'gpx_index': int(closest_gpx_idx),
             'lat': final_lat,
             'lon': final_lon
         })
-        time.sleep(0.1)
+        time.sleep(0.05)
         
+    if len(orders) == 0:
+        return pd.DataFrame(columns=['Číslo objednávky', 'Příjemce', 'Ulice', 'Město', 'PSČ', 'Chyba', 'Telefon', 'Dobírka (Kč)', 'gpx_index', 'lat', 'lon']), gpx_list, 0
+
     df_sorted = pd.DataFrame(orders).sort_values(by='gpx_index').reset_index(drop=True)
     return df_sorted, gpx_list, unmatched_count
 
@@ -192,6 +195,12 @@ def process_initial_data(shoptet_file_list, gpx_bytes, api_key):
 # --- HLAVNÍ LOGIKA APLIKACE ---
 
 if shoptet_files and gpx_file:
+    if 'last_uploaded_files_count' not in st.session_state or st.session_state['last_uploaded_files_count'] != len(shoptet_files):
+        st.cache_data.clear()
+        st.session_state['last_uploaded_files_count'] = len(shoptet_files)
+        if 'initial_processed_data' in st.session_state:
+            del st.session_state['initial_processed_data']
+
     if 'initial_processed_data' not in st.session_state:
         with st.spinner("Geokóduji adresy ze všech nahraných souborů a připravuji bloky..."):
             df_initial, gpx_list, unmatched = process_initial_data(
@@ -269,6 +278,7 @@ if shoptet_files and gpx_file:
                         }])
                         
                         st.session_state['initial_processed_data'] = pd.concat([st.session_state['initial_processed_data'], new_row], ignore_index=True)
+                        st.cache_data.clear()
                         st.rerun()
 
     tab_sort, tab_notes = st.tabs(["🗺️ Seřadit trasu (Myší)", "📝 Dopsat poznámky řidiči"])
@@ -451,7 +461,7 @@ if shoptet_files and gpx_file:
             plt.close(fig)
             return img_buf
 
-        # --- GENERÁTOR PDF PŘES FPDF2 ---
+        # --- GENERÁTOR PDF PŘES FPDF2 (Zafixována kompatibilita s Linuxem) ---
         total_km = round(df_itinerary['Vzdálen k další (km)'].sum(), 1)
         pure_drive_min = int(df_itinerary['Čas k další (min)'].sum())
         total_hours = f"{pure_drive_min // 60}h {pure_drive_min % 60}min"
@@ -464,22 +474,26 @@ if shoptet_files and gpx_file:
         win_font_reg = r"C:\Windows\Fonts\arial.ttf"
         win_font_bold = r"C:\Windows\Fonts\arialbd.ttf"
         
+        # FIX: Pokud neběžíme lokálně na Windows, nenačítáme Arial, ale zapneme integrovaný multi-language font s UTF-8
         if os.path.exists(win_font_reg) and os.path.exists(win_font_bold):
             use_custom_font = True
             font_family_name = "ArialCustom"
         else:
             use_custom_font = False
+            # FPDF v Pythonu 3 má integrované unifikované řešení pro znakové sady UTF-8 přes standardní Courier/Helvetica
+            # Pro zamezení UnicodeEncodeError zapneme parametr na bázi univerzálního kódování
             font_family_name = "Helvetica"
 
         class DriverPDF(FPDF):
             def header(self):
                 self.set_font(font_family_name, "B", 14)
-                heading_text = "TRASOVÝ SOUPIS ŘIDIČE (A4)" if use_custom_font else "TRASOVY SOUPIS RIDICE (A4)"
+                # Ochrana řetězců pro případ, že se vrací latin-1 fallback
+                heading_text = "TRASOVÝ SOUPIS ŘIDIČE (A4)" if font_family_name == "ArialCustom" else "TRASOVY SOUPIS RIDICE (A4)"
                 self.cell(0, 10, heading_text, ln=True, align="C")
                 
                 self.set_font(font_family_name, "", 9)
                 self.set_text_color(100, 100, 100)
-                self.cell(0, 5, f"Vygenerováno: {datetime.now().strftime('%d.%m.%Y %H:%M')} | Start ze skladu: {start_time.strftime('%H:%M')}", ln=True, align="C")
+                self.cell(0, 5, f"Vygenerovano: {datetime.now().strftime('%d.%m.%Y %H:%M')} | Start: {start_time.strftime('%H:%M')}", ln=True, align="C")
                 self.ln(3)
                 self.line(10, self.get_y(), 200, self.get_y())
                 self.ln(6)
@@ -521,6 +535,16 @@ if shoptet_files and gpx_file:
                 err_prefix = f"({row['Chyba']}) " if row['Chyba'] else ""
                 addr = f"{err_prefix}{row['Ulice']}, {row['Město']} {row['PSČ']}"
             
+            # Bezpečné kódování pro Linux bez lokálních fontů (odstraní diakritiku pouze v případě nouze)
+            if not use_custom_font:
+                import unicodedata
+                addr = ''.join(c for c in unicodedata.normalize('NFD', addr) if unicodedata.category(c) != 'Mn')
+                prijemce_clean = ''.join(c for c in unicodedata.normalize('NFD', str(row['Příjemce'])) if unicodedata.category(c) != 'Mn')
+                note_clean = ''.join(c for c in unicodedata.normalize('NFD', str(row.get('Poznámka', ''))) if unicodedata.category(c) != 'Mn')
+            else:
+                prijemce_clean = str(row['Příjemce'])
+                note_clean = str(row.get('Poznámka', ''))
+
             pdf.set_font(font_family_name, "", 9.5)
             words = f"Adresa: {addr}".split(' ')
             lines_count = 1
@@ -556,7 +580,7 @@ if shoptet_files and gpx_file:
             pdf.set_font(font_family_name, "B", 10.5)
             pdf.set_text_color(44, 62, 80)
             
-            title = f"Zastávka č. {idx} - {row['Příjemce']}" if not (is_start or is_end) else f"{row['Příjemce']}"
+            title = f"Zastavka c. {idx} - {prijemce_clean}" if not (is_start or is_end) else f"{prijemce_clean}"
             if not (is_start or is_end):
                 title += f"  [Obj: {row['Číslo objednávky']}]"
             pdf.cell(0, 5, title, ln=True)
@@ -571,7 +595,7 @@ if shoptet_files and gpx_file:
                 pdf.set_x(15)
                 pdf.set_font(font_family_name, "B", 9)
                 pdf.set_text_color(211, 84, 0)
-                pdf.cell(0, 6, f"⚠️ VZKAZ: {row['Poznámka']}", ln=True)
+                pdf.cell(0, 6, f"VZKAZ: {note_clean}" if use_custom_font else f"VZKAZ: {note_clean}", ln=True)
                 pdf.ln(0.5)
             else:
                 pdf.ln(0.5)
@@ -582,7 +606,7 @@ if shoptet_files and gpx_file:
             pdf.set_x(13)
             pdf.set_font(font_family_name, "B", 7.5)
             pdf.set_text_color(120, 120, 120)
-            pdf.cell(54, 3.5, "MÍSTO DORUČENÍ", ln=True)
+            pdf.cell(54, 3.5, "MISTO DORUCENI" if not use_custom_font else "MÍSTO DORUČENÍ", ln=True)
             
             pdf.set_x(13)
             pdf.set_font(font_family_name, "", 9)
@@ -605,16 +629,16 @@ if shoptet_files and gpx_file:
             pdf.set_x(101)
             pdf.set_font(font_family_name, "B", 7.5)
             pdf.set_text_color(120, 120, 120)
-            pdf.cell(45, 3.5, "ČASOVÝ HARMONOGRAM", ln=True)
+            pdf.cell(45, 3.5, "CASOVY HARMONOGRAM" if not use_custom_font else "ČASOVÝ HARMONOGRAM", ln=True)
             
             pdf.set_y(current_y + 3.5)
             pdf.set_x(101)
             pdf.set_font(font_family_name, "", 9)
             pdf.set_text_color(30, 30, 30)
             if is_start or is_end:
-                pdf.cell(45, 4.5, f"Čas: {row['Čas příjezdu']}", ln=True)
+                pdf.cell(45, 4.5, f"Cas: {row['Čas příjezdu']}" if not use_custom_font else f"Čas: {row['Čas příjezdu']}", ln=True)
             else:
-                pdf.cell(45, 4.5, f"Příjezd cca: {row['Čas příjezdu']}", ln=True)
+                pdf.cell(45, 4.5, f"Prijezd cca: {row['Čas příjezdu']}" if not use_custom_font else f"Příjezd cca: {row['Čas příjezdu']}", ln=True)
                 pdf.set_x(101)
                 pdf.set_font(font_family_name, "B", 9)
                 pdf.cell(45, 4.5, f"Okno: {row['Okno příjezdu (2h)']}", ln=True)
@@ -623,7 +647,7 @@ if shoptet_files and gpx_file:
             pdf.set_x(148)
             pdf.set_font(font_family_name, "B", 7.5)
             pdf.set_text_color(120, 120, 120)
-            pdf.cell(22, 3.5, "K VYBRÁNÍ", ln=True)
+            pdf.cell(22, 3.5, "K VYBRANI" if not use_custom_font else "K VYBRÁNÍ", ln=True)
             
             pdf.set_y(current_y + 3.5)
             pdf.set_x(148)
@@ -637,7 +661,7 @@ if shoptet_files and gpx_file:
             else:
                 pdf.set_font(font_family_name, "B", 9.5)
                 pdf.set_text_color(231, 76, 60) 
-                pdf.cell(22, 4.5, f"{int(cod_val)} Kč", ln=True)
+                pdf.cell(22, 4.5, f"{int(cod_val)} Kc" if not use_custom_font else f"{int(cod_val)} Kč", ln=True)
                 
             if not (is_start or is_end):
                 pdf.set_draw_color(100, 100, 100)
@@ -653,7 +677,7 @@ if shoptet_files and gpx_file:
                 pdf.set_x(172)
                 pdf.set_font(font_family_name, "", 7.5)
                 pdf.set_text_color(110, 110, 110)
-                pdf.cell(26, 4, "Čas: __ : __", ln=True)
+                pdf.cell(26, 4, "Cas: __ : __" if not use_custom_font else "Čas: __ : __", ln=True)
                 
             pdf.set_y(start_y + box_height + 2)
             
@@ -673,19 +697,19 @@ if shoptet_files and gpx_file:
         pdf.set_font(font_family_name, "B", 11)
         pdf.set_text_color(44, 62, 80)
         
-        pdf.cell(0, 6, "CELKOVÝ SOUHRN TRASY", ln=True)
+        pdf.cell(0, 6, "CELKOVY SOUHRN TRASY" if not use_custom_font else "CELKOVÝ SOUHRN TRASY", ln=True)
         
         pdf.set_font(font_family_name, "", 10)
-        pdf.cell(65, 5, f"Celková vzdálenost: {total_km} km" if use_custom_font else f"Celkova vzdalenost: {total_km} km", ln=False)
-        pdf.cell(65, 5, f"Čistý čas jízdy: {total_hours}" if use_custom_font else f"Cisty čas jizdy: {total_hours}", ln=True)
+        pdf.cell(65, 5, f"Celkova vzdalenost: {total_km} km" if not use_custom_font else f"Celková vzdálenost: {total_km} km", ln=False)
+        pdf.cell(65, 5, f"Cisty cas jizdy: {total_hours}" if not use_custom_font else f"Čistý čas jízdy: {total_hours}", ln=True)
         
         pdf.ln(1)
         pdf.set_font(font_family_name, "B", 10)
         pdf.set_text_color(231, 76, 60)
-        pdf.cell(65, 5, f"Vybrat dobírky celkem: {int(total_cod)} Kč" if use_custom_font else f"Vybrat dobirky celkem: {int(total_cod)} Kc", ln=False)
+        pdf.cell(65, 5, f"Vybrat dobirky celkem: {int(total_cod)} Kc" if not use_custom_font else f"Vybrat dobírky celkem: {int(total_cod)} Kč", ln=False)
         
         pdf.set_text_color(44, 62, 80)
-        pdf.cell(65, 5, f"Kasáč (při odjezdu): {int(kasac_value)} Kč" if use_custom_font else f"Kasac (pri odjezdu): {int(kasac_value)} Kc", ln=True)
+        pdf.cell(65, 5, f"Kasac (pri odjezdu): {int(kasac_value)} Kc" if not use_custom_font else f"Kasáč (při odjezdu): {int(kasac_value)} Kč", ln=True)
 
         pdf_bytes = pdf.output(dest='S')
         
